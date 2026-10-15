@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -20,6 +21,8 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQUEST_MIC = 502;
     private TextView status;
+    private TextView voiceStatus;
+    private VoiceSpeaker voiceSpeaker;
     private Button startButton;
     private Button installButton;
     private final ExecutorService workers = Executors.newSingleThreadExecutor();
@@ -42,9 +45,23 @@ public final class MainActivity extends Activity {
         text(column, "Dinlemeyi uygulama açıkken başlat. Ekranı kapatsan da Android izin verdiği sürece komutları algılar.", 15, 0xffd2dbeb);
         space(column, 16);
         status = text(column, "", 15, 0xff53dec1);
+        voiceStatus = text(column, "Türkçe ses hazırlanıyor...", 14, 0xffa9c5dc);
         space(column, 16);
 
-        installButton = button(column, "1  ·  Türkçe modeli indir", v -> installModel());
+        button(column, "🔊  Sesi test et", v -> {
+            if (voiceSpeaker != null) {
+                voiceSpeaker.say("Merhaba. Ben ELXVRO Jarvis. Seni duyuyorum ve sana Türkçe cevap verebilirim.",
+                        () -> voiceStatus.setText("Ses testi tamamlandı."));
+            }
+        });
+        button(column, "Türkçe ses paketini yükle / ayarla", v -> {
+            try {
+                startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
+            } catch (RuntimeException ex) {
+                startActivity(new Intent(Settings.ACTION_SETTINGS));
+            }
+        });
+        installButton = button(column, "1  ·  Türkçe tanıma modelini indir", v -> installModel());
         startButton = button(column, "2  ·  Dinlemeyi başlat", v -> requestStart());
         button(column, "Dinlemeyi durdur", v -> stopListening());
         button(column, "Pil ayarlarını aç", v -> {
@@ -56,6 +73,7 @@ public final class MainActivity extends Activity {
         space(column, 18);
         text(column, "Güvenlik: Ses kaydı tutulmaz. Hesap şifresi istenmez. Bu sürüm bağlantıları bildirimle açar; hesaplarda değişiklik yapmaz.", 13, 0xff95a4bb);
         setContentView(scroll);
+        voiceSpeaker = new VoiceSpeaker(this, message -> voiceStatus.setText(message));
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 503);
@@ -119,6 +137,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (voiceSpeaker != null) voiceSpeaker.shutdown();
         workers.shutdown();
         super.onDestroy();
     }

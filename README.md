@@ -1,8 +1,10 @@
-# ELXVRO JARVIS v0.1.0
+# ELXVRO JARVIS v0.1.1
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
 
 ## Yetenekler (bu sürümde gerçek)
+- **Yeni v0.1.1:** Android TextToSpeech ile Türkçe sesli yanıt ve uygulama içi **Sesi test et** düğmesi.
+- **Yeni v0.1.1:** Jarvis başlatıldığında, “Hey Jarvis” uyandırıldığında ve komut alındığında sesli yanıt; kendi konuşmasını algılamaması için mikrofon tanımayı geçici durdurma.
 - Kullanıcı uygulamadayken başlatılan mikrofon türünde foreground service.
 - Ekran kilitlendikten sonra (işletim sistemi izin verdiği sürece) çevrimdışı Vosk ile "Hey Jarvis" tespiti.
 - "Instagram", "Play Console", "site", "arama", "yardım", "dur" komutlarını sınıflandırma.
@@ -29,6 +31,10 @@ Google Play Console API ile uygulama yayınlama, Instagram Graph API paylaşım�
 - Gradle 8.13 / Android Gradle Plugin 8.11.1
 - Özel backend / API anahtarı yok. Şifre istemez ve saklamaz.
 - Ses kayıtları ve transkriptler diske veya sunucuya kaydedilmez; mikrofondan gerçek zamanlı yerel işlenir.
+- Sesli yanıt için **Android TTS** sistemine ihtiyaç vardır. Türkçe konuşma ses paketi telefonda mevcut değilse cihaz ayarlarından indirilmelidir. Çevrimdışı TTS ancak yüklü offline Türkçe sesi olan cihazlarda garanti edilebilir.
+
+## Sürüm yükseltme uyarısı
+GitHub Actions **debug** imza anahtarını her çalışmada yeniden üretebilir. v0.1.0 kuruluysa ve v0.1.1 'yüklenemedi' diyorsa eskisini kaldırıp bu APK'yı yükle (uygulamanın yerel indirdiği Vosk modeli silinir ve yeniden yüklenmelidir). Üretim sürümünde kullanıcıya özel kalıcı bir imza anahtarı gereklidir.
 
 ## Güvenlik ve sınırlamalar
 - Sürekli mikrofon dinleme batarya kullanır. Vosk yazılımsal konuşma tanımadır, donanımsal düşük-güç DSP "hotword" değildir.

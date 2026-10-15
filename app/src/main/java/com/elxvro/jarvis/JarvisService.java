@@ -32,6 +32,8 @@ public final class JarvisService extends Service implements RecognitionListener 
     private static final int NOTIFICATION_ID = 71;
     private final Handler main = new Handler(Looper.getMainLooper());
     private SpeechService speech;
+    private VoiceSpeaker voiceSpeaker;
+    private boolean speaking;
     private Recognizer recognizer;
     private Model model;
     private PowerManager.WakeLock wakeLock;
@@ -42,6 +44,13 @@ public final class JarvisService extends Service implements RecognitionListener 
 
     @Override public void onCreate() {
         super.onCreate();
+        voiceSpeaker = new VoiceSpeaker(this, message -> {
+            if (message.startsWith("Ses motoru bulunamadı")
+                    || message.startsWith("Türkçe konuşma sesi eksik")
+                    || message.startsWith("Konuşma motoru yanıt vermedi")) {
+                update(message);
+            }
+        });
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "JARVIS dinleme",
                 NotificationManager.IMPORTANCE_LOW));
@@ -82,6 +91,7 @@ public final class JarvisService extends Service implements RecognitionListener 
                     acquireWakeLock();
                     speech.startListening(this);
                     update("Dinliyor · Hey Jarvis de");
+                    speakWithPausedMic("Jarvis hazır. Hey Jarvis diyebilirsin.", false);
                 } catch (Exception error) {
                     update("Mikrofon açılamadı: " + error.getMessage());
                     stopSelf();
@@ -112,6 +122,7 @@ public final class JarvisService extends Service implements RecognitionListener 
     @Override public void onTimeout() { awaitingCommand = false; update("Dinliyor · Hey Jarvis de"); }
 
     private void accept(String rawJson) {
+        if (speaking) return;
         try {
             JSONObject data = new JSONObject(rawJson);
             String text = data.optString("partial", data.optString("text", "")).trim();
@@ -128,10 +139,13 @@ public final class JarvisService extends Service implements RecognitionListener 
             if (CommandRouter.containsWake(text)) {
                 awaitingCommand = true;
                 update("Uyandım. Komutunu söyle.");
-                scheduleTimeout();
                 String trailing = CommandRouter.stripWake(text);
                 CommandRouter.Kind kind = CommandRouter.classify(trailing);
-                if (kind != CommandRouter.Kind.UNKNOWN) dispatch(kind);
+                if (kind != CommandRouter.Kind.UNKNOWN) {
+                    dispatch(kind);
+                } else {
+                    speakWithPausedMic("Dinliyorum.", true);
+                }
             }
         } catch (Exception ignored) {
             // Ignore an incomplete speech hypothesis, not the microphone service.
@@ -156,7 +170,8 @@ public final class JarvisService extends Service implements RecognitionListener 
         if (commandTimeout != null) main.removeCallbacks(commandTimeout);
         if (speech != null) speech.reset();
         if (command == CommandRouter.Kind.STOP) {
-            stopSelf();
+            update("JARVIS durduruluyor...");
+            speakWithPausedMic("Dinlemeyi kapatıyorum.", false, this::stopSelf);
             return;
         }
         String message;
@@ -188,6 +203,44 @@ public final class JarvisService extends Service implements RecognitionListener 
                 message = "Komut anlaşılamadı.";
         }
         update(message, action);
+        String spokenReply;
+        switch (command) {
+            case HELP: spokenReply = "Instagram, Play Konsol, web sitesi, arama veya dur diyebilirsin."; break;
+            case INSTAGRAM: spokenReply = "Instagram bağlantısını bildirimine ekledim."; break;
+            case PLAY_CONSOLE: spokenReply = "Play Konsol bağlantısını bildirimine ekledim."; break;
+            case WEBSITE: spokenReply = "Web sitesi bağlantısını bildirimine ekledim."; break;
+            case PHONE: spokenReply = "Arama ekranını açman için bildirim hazırladım."; break;
+            default: spokenReply = "Bu komutu henüz gerçekleştiremiyorum.";
+        }
+        speakWithPausedMic(spokenReply, false);
+    }
+
+    /**
+     * Pause recognition while Android TTS speaks so Jarvis will not mistake its
+     * own voice for a new command. Re-enable the microphone after completion.
+     */
+    private void speakWithPausedMic(String phrase, boolean expectNextCommand) {
+        speakWithPausedMic(phrase, expectNextCommand, null);
+    }
+
+    private void speakWithPausedMic(String phrase, boolean expectNextCommand, Runnable completion) {
+        speaking = true;
+        if (speech != null) speech.setPause(true);
+        if (voiceSpeaker == null) {
+            finishSpeaking(expectNextCommand, completion);
+        } else {
+            voiceSpeaker.say(phrase, () -> finishSpeaking(expectNextCommand, completion));
+        }
+    }
+
+    private void finishSpeaking(boolean expectNextCommand, Runnable completion) {
+        speaking = false;
+        if (speech != null) {
+            speech.reset();
+            speech.setPause(false);
+        }
+        if (expectNextCommand && awaitingCommand) scheduleTimeout();
+        if (completion != null) completion.run();
     }
 
     private PendingIntent webAction(String destination) {
@@ -229,6 +282,10 @@ public final class JarvisService extends Service implements RecognitionListener 
 
     @Override public void onDestroy() {
         loading = false;
+        if (voiceSpeaker != null) {
+            voiceSpeaker.shutdown();
+            voiceSpeaker = null;
+        }
         if (commandTimeout != null) main.removeCallbacks(commandTimeout);
         if (speech != null) {
             speech.shutdown();
