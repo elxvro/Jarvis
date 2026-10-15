@@ -39,7 +39,7 @@ public final class MainActivity extends Activity {
 
         title(column, "ELXVRO", 28, 0xff53dec1);
         title(column, "JARVIS", 42, Color.WHITE);
-        text(column, "v0.1 • Kişisel, çevrimdışı sesli asistan", 14, 0xffa2aec4);
+        text(column, "v0.1.2 • Yerleşik Türkçe sesli asistan", 14, 0xffa2aec4);
         space(column, 24);
         title(column, "Hey Jarvis", 25, Color.WHITE);
         text(column, "Dinlemeyi uygulama açıkken başlat. Ekranı kapatsan da Android izin verdiği sürece komutları algılar.", 15, 0xffd2dbeb);
@@ -48,13 +48,14 @@ public final class MainActivity extends Activity {
         voiceStatus = text(column, "Türkçe ses hazırlanıyor...", 14, 0xffa9c5dc);
         space(column, 16);
 
-        button(column, "🔊  Sesi test et", v -> {
+        button(column, "🔊  Yerleşik sesi test et", v -> {
             if (voiceSpeaker != null) {
                 voiceSpeaker.say("Merhaba. Ben ELXVRO Jarvis. Seni duyuyorum ve sana Türkçe cevap verebilirim.",
                         () -> voiceStatus.setText("Ses testi tamamlandı."));
             }
         });
-        button(column, "Türkçe ses paketini yükle / ayarla", v -> {
+        text(column, "İlk önce bu ses testini dene. Bu ses için Android konuşma hizmeti veya Türkçe TTS paketi gerekmez.", 13, 0xffa9c5dc);
+        button(column, "İsteğe bağlı: sistem TTS ayarları", v -> {
             try {
                 startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
             } catch (RuntimeException ex) {

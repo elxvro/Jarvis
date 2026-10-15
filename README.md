@@ -1,8 +1,10 @@
-# ELXVRO JARVIS v0.1.1
+# ELXVRO JARVIS v0.1.2
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
 
 ## Yetenekler (bu sürümde gerçek)
+- **Yeni v0.1.2:** Uygulama içine yerleştirilmiş 10 Türkçe WAV ses; temel komutlar için Android TTS motoruna bağlı değil.
+- WAV dosyaları GitHub Actions üzerinde ücretsiz, açık kaynak [eSpeak NG](https://github.com/espeak-ng/espeak-ng) ile oluşturulur. Ses robotik olabilir. Gelecekte dinamik ses için [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx/tree/master/android/SherpaOnnxTtsEngine) değerlendirilebilir.
 - **Yeni v0.1.1:** Android TextToSpeech ile Türkçe sesli yanıt ve uygulama içi **Sesi test et** düğmesi.
 - **Yeni v0.1.1:** Jarvis başlatıldığında, “Hey Jarvis” uyandırıldığında ve komut alındığında sesli yanıt; kendi konuşmasını algılamaması için mikrofon tanımayı geçici durdurma.
 - Kullanıcı uygulamadayken başlatılan mikrofon türünde foreground service.

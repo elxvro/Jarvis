@@ -20,6 +20,7 @@ final class VoiceSpeaker {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final StatusListener listener;
+    private final BundledVoicePlayer bundled;
     private TextToSpeech tts;
     private boolean initialized;
     private boolean ready;
@@ -32,6 +33,7 @@ final class VoiceSpeaker {
 
     VoiceSpeaker(Context context, StatusListener listener) {
         this.listener = listener;
+        this.bundled = new BundledVoicePlayer(context, listener::onStatus);
         listener.onStatus("Ses motoru hazırlanıyor...");
         tts = new TextToSpeech(context.getApplicationContext(),
                 result -> main.post(() -> onInitialized(result)));
@@ -79,10 +81,10 @@ final class VoiceSpeaker {
                 });
                 listener.onStatus("Türkçe ses hazır. 'Sesi test et' düğmesine dokun.");
             } else {
-                listener.onStatus("Türkçe konuşma sesi eksik. Türkçe TTS ses paketini yükle.");
+                listener.onStatus("Yerleşik Türkçe ses çalışabilir; dinamik konuşma için Türkçe TTS paketi eksik.");
             }
         } else {
-            listener.onStatus("Ses motoru bulunamadı. Android konuşma hizmetini yükle veya etkinleştir.");
+            listener.onStatus("Yerleşik Türkçe ses çalışabilir; sistem konuşma motoru eksik.");
         }
         if (waitingText != null) {
             String text = waitingText;
@@ -96,6 +98,10 @@ final class VoiceSpeaker {
     void say(String phrase, Runnable afterSpeaking) {
         if (released) {
             if (afterSpeaking != null) afterSpeaking.run();
+            return;
+        }
+        if (bundled.has(phrase)) {
+            bundled.play(phrase, afterSpeaking);
             return;
         }
         if (!initialized) {
@@ -146,6 +152,7 @@ final class VoiceSpeaker {
 
     void shutdown() {
         released = true;
+        bundled.close();
         waitingText = null;
         waitingCompletion = null;
         activeCompletion = null;
