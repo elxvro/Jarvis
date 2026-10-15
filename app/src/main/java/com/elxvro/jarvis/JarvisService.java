@@ -41,6 +41,7 @@ public final class JarvisService extends Service implements RecognitionListener 
     private boolean awaitingCommand = false;
     private long suppressUntil = 0L;
     private Runnable commandTimeout;
+    private final WakeSession wakeSession = new WakeSession();
 
     @Override public void onCreate() {
         super.onCreate();
@@ -90,8 +91,8 @@ public final class JarvisService extends Service implements RecognitionListener 
                     speech = new SpeechService(recognizer, 16000f);
                     acquireWakeLock();
                     speech.startListening(this);
-                    update("Dinliyor · Hey Jarvis de");
-                    speakWithPausedMic("Jarvis hazır. Hey Jarvis diyebilirsin.", false);
+                    update("Dinliyor · Mia de");
+                    speakWithPausedMic("Mia hazır. İstersen adımı söyle.", false);
                 } catch (Exception error) {
                     update("Mikrofon açılamadı: " + error.getMessage());
                     stopSelf();
@@ -125,21 +126,35 @@ public final class JarvisService extends Service implements RecognitionListener 
         if (speaking) return;
         try {
             JSONObject data = new JSONObject(rawJson);
-            String text = data.optString("partial", data.optString("text", "")).trim();
-            if (text.isEmpty()) return;
+            String recognized = data.optString("partial", data.optString("text", "")).trim();
+            if (recognized.isEmpty()) return;
+            long now = SystemClock.elapsedRealtime();
+            if (awaitingCommand && !wakeSession.isArmed(now)) {
+                awaitingCommand = false;
+                update("Dinliyor · Mia de");
+            }
             if (awaitingCommand) {
-                String command = CommandRouter.stripWake(text);
-                if (command.isEmpty() || command.equals("hey")) return;
-                CommandRouter.Kind kind = CommandRouter.classify(command);
-                // In a partial hypothesis, wait for a recognized command word.
-                if (kind != CommandRouter.Kind.UNKNOWN) dispatch(kind);
+                String commandText = CommandRouter.stripWake(recognized);
+                // Treat stuttered or incomplete words as extra thinking time.
+                wakeSession.heard(now);
+                if (commandText.isEmpty()) {
+                    scheduleTimeout();
+                    return;
+                }
+                CommandRouter.Kind kind = CommandRouter.classify(commandText);
+                if (kind != CommandRouter.Kind.UNKNOWN) {
+                    dispatch(kind);
+                } else {
+                    scheduleTimeout();
+                }
                 return;
             }
-            if (SystemClock.elapsedRealtime() < suppressUntil) return;
-            if (CommandRouter.containsWake(text)) {
+            if (now < suppressUntil) return;
+            if (CommandRouter.containsWake(recognized)) {
                 awaitingCommand = true;
-                update("Uyandım. Komutunu söyle.");
-                String trailing = CommandRouter.stripWake(text);
+                wakeSession.wake(now);
+                update("Mia dinliyor. Acele etme, komutunu söyle.");
+                String trailing = CommandRouter.stripWake(recognized);
                 CommandRouter.Kind kind = CommandRouter.classify(trailing);
                 if (kind != CommandRouter.Kind.UNKNOWN) {
                     dispatch(kind);
@@ -147,30 +162,41 @@ public final class JarvisService extends Service implements RecognitionListener 
                     speakWithPausedMic("Dinliyorum.", true);
                 }
             }
-        } catch (Exception ignored) {
-            // Ignore an incomplete speech hypothesis, not the microphone service.
+        } catch (Exception error) {
+            // Malformed partial speech is ignored. Never crash on incomplete input.
         }
     }
 
     private void scheduleTimeout() {
         if (commandTimeout != null) main.removeCallbacks(commandTimeout);
+        if (!awaitingCommand) return;
+        long left = wakeSession.remainingMs(SystemClock.elapsedRealtime());
+        if (left <= 0L) {
+            awaitingCommand = false;
+            update("Dinliyor · Mia de");
+            return;
+        }
         commandTimeout = () -> {
-            if (awaitingCommand) {
+            if (!awaitingCommand) return;
+            if (!wakeSession.isArmed(SystemClock.elapsedRealtime())) {
                 awaitingCommand = false;
-                update("Komut süresi doldu · Hey Jarvis de");
+                update("Komut süresi doldu. Mia diyebilirsin.");
                 if (speech != null) speech.reset();
+            } else {
+                scheduleTimeout();
             }
         };
-        main.postDelayed(commandTimeout, 9000L);
+        main.postDelayed(commandTimeout, Math.max(250L, left));
     }
 
     private void dispatch(CommandRouter.Kind command) {
         awaitingCommand = false;
+        wakeSession.cancel();
         suppressUntil = SystemClock.elapsedRealtime() + 4000L;
         if (commandTimeout != null) main.removeCallbacks(commandTimeout);
         if (speech != null) speech.reset();
         if (command == CommandRouter.Kind.STOP) {
-            update("JARVIS durduruluyor...");
+            update("Mia durduruluyor...");
             speakWithPausedMic("Dinlemeyi kapatıyorum.", false, this::stopSelf);
             return;
         }

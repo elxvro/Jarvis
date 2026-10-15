@@ -25,8 +25,8 @@ final class BundledVoicePlayer {
     BundledVoicePlayer(Context context, Status status) {
         this.context = context.getApplicationContext();
         this.status = status;
-        phrases.put("Merhaba. Ben ELXVRO Jarvis. Seni duyuyorum ve sana Türkçe cevap verebilirim.", "test.wav");
-        phrases.put("Jarvis hazır. Hey Jarvis diyebilirsin.", "ready.wav");
+        phrases.put("Merhaba. Ben Mia. İstersen konuşabilir ya da yazabilirsin.", "test.wav");
+        phrases.put("Mia hazır. İstersen adımı söyle.", "ready.wav");
         phrases.put("Dinliyorum.", "listening.wav");
         phrases.put("Dinlemeyi kapatıyorum.", "stopping.wav");
         phrases.put("Instagram, Play Konsol, web sitesi, arama veya dur diyebilirsin.", "help.wav");

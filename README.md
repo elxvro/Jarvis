@@ -1,14 +1,23 @@
-# ELXVRO JARVIS v0.1.2
+# ELXVRO MIA v0.2.0
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
 
-## Yetenekler (bu sürümde gerçek)
+## Mia v0.2.0 — erişilebilir kontrol
+- **Tek kelimelik uyandırma:** “Mia” (alternatif telaffuzlar “miya”, “miyya”, “miiya”). “Hey” söylemek zorunlu değil.
+- **Duraklama toleransı:** komut sırasında 30 saniyeye kadar sessizlik; konuşma devam ettikçe yenilenir, 90 saniyelik toplam güvenlik sınırı vardır.
+- **Yazılı komut:** Instagram, konsol, site, arama, dur, yardım.
+- **Büyük dokunmatik kontroller:** en az 70dp yüksekliğinde düğmeler, 18sp metin.
+- **Ses yanıtları:** telefonda bulunan TTS veya uygulamaya gömülü eSpeak NG ile üretilmiş yanıtlar; donanımda ses çıkışı henüz doğrulanmadı.
+- **Sınır:** tek kelimelik uyandırma, yerel Vosk'un “Mia” adını tanımasına bağlıdır. Kekemeliği güvenilir biçimde çözebilen tıbbi/kişiselleştirilmiş konuşma tanıma iddiası yoktur.
+- **Gerçek entegrasyonlar henüz YOK:** Play Console yayınlama, Instagram API paylaşımı, web sitesi dosya güncelleme ve otomatik arama; düğmeler ilgili ekranları açar.
+
+## Önceki sürüm
 - **Yeni v0.1.2:** Uygulama içine yerleştirilmiş 10 Türkçe WAV ses; temel komutlar için Android TTS motoruna bağlı değil.
 - WAV dosyaları GitHub Actions üzerinde ücretsiz, açık kaynak [eSpeak NG](https://github.com/espeak-ng/espeak-ng) ile oluşturulur. Ses robotik olabilir. Gelecekte dinamik ses için [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx/tree/master/android/SherpaOnnxTtsEngine) değerlendirilebilir.
 - **Yeni v0.1.1:** Android TextToSpeech ile Türkçe sesli yanıt ve uygulama içi **Sesi test et** düğmesi.
 - **Yeni v0.1.1:** Jarvis başlatıldığında, “Hey Jarvis” uyandırıldığında ve komut alındığında sesli yanıt; kendi konuşmasını algılamaması için mikrofon tanımayı geçici durdurma.
 - Kullanıcı uygulamadayken başlatılan mikrofon türünde foreground service.
-- Ekran kilitlendikten sonra (işletim sistemi izin verdiği sürece) çevrimdışı Vosk ile "Hey Jarvis" tespiti.
+- Ekran kilitlendikten sonra (işletim sistemi izin verdiği sürece) çevrimdışı Vosk ile "Mia" tespiti.
 - "Instagram", "Play Console", "site", "arama", "yardım", "dur" komutlarını sınıflandırma.
 - Ekran kilitliyken başka uygulama açmaya çalışmak yerine kullanıcı dokunmalı bildirim.
 - İlk kullanımda 35 MB civarında ücretsiz Türkçe modeli kullanıcı isteğiyle indirme; sonrasında konuşma tanıma çevrimdışı çalışır.
@@ -19,11 +28,11 @@ Google Play Console API ile uygulama yayınlama, Instagram Graph API paylaşım�
 
 ## Ücretsiz derleme (telefondan)
 1. Bu depodaki **Actions** sekmesine git; "Build debug APK" iş akışını çalıştır veya değişiklikleri main'e aktar.
-2. İşlem tamamlandığında **ELXVRO-JARVIS-debug-APK** artefaktını indir.
+2. İşlem tamamlandığında **ELXVRO-MIA-debug-APK** artefaktını indir.
 3. ZIP içindeki \`app-debug.apk\` dosyasını Android'e yükle (bilinmeyen kaynaktan yükleme izni gerekebilir).
 4. Uygulamayı aç. Bildirim ve mikrofon izinlerini ver.
 5. "Türkçe modeli indir" düğmesine bas; internet yalnızca model indirme için gerekir.
-6. Model tamamlanınca "Dinlemeyi başlat" düğmesine bas, ekranı kapat, "Hey Jarvis" de. Ardından "Instagram", "Play Console", "site" veya "yardım" de.
+6. Model tamamlanınca "Dinlemeyi başlat" düğmesine bas, ekranı kapat, "Mia" de. Ardından "Instagram", "Play Console", "site" veya "yardım" de.
 
 > Android 14+ üzerinde bir mikrofon foreground service'i arka planda keyfi olarak başlatılamaz. Önce uygulama görünürken etkinleştirmek gerekir. Sistem, OEM pil optimizasyonu veya kullanıcı servisi durdurursa, uygulamadan yeniden başlatılmalıdır. Uygulama kendi kendine yeniden başlatılmayacak; açılışta mikrofon dinlemeye başlamaz.
 
@@ -40,7 +49,7 @@ GitHub Actions **debug** imza anahtarını her çalışmada yeniden üretebilir.
 
 ## Güvenlik ve sınırlamalar
 - Sürekli mikrofon dinleme batarya kullanır. Vosk yazılımsal konuşma tanımadır, donanımsal düşük-güç DSP "hotword" değildir.
-- Tanınan sözcükler kusursuz olmayabilir; ilk sürümde "Hey Jarvis" bazı aksanlarda kaçabilir.
+- Tanınan sözcükler kusursuz olmayabilir; ilk sürümde "Mia" bazı aksanlarda kaçabilir.
 - Dinleme, kullanıcı tarafından verilen izinle ve kalıcı bildirim altında sürer. İstendiğinde hemen durdurulur.
 - Telefon kilidini aşmaz; işlem için kullanıcı etkileşimi gerektiğinde bildirim açılır.
 - APK **debug imzalıdır**, Play Store dağıtımı için değildir. Uygulama güncellemeleri için aynı imzanın korunması gerekir; GitHub Actions debug anahtarı her derlemede değişebilir, bunun için sonraki sürümde sabit özel imza gerekir.

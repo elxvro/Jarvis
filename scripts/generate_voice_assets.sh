@@ -5,8 +5,8 @@ sample() {
   espeak-ng -v tr -s 145 -p 40 -a 200 -w "app/src/main/assets/voice/$1.wav" "$2"
   test -s "app/src/main/assets/voice/$1.wav"
 }
-sample test "Merhaba. Ben ELXVRO Jarvis. Seni duyuyorum ve sana Türkçe cevap verebilirim."
-sample ready "Jarvis hazır. Hey Jarvis diyebilirsin."
+sample test "Merhaba. Ben Mia. İstersen konuşabilir ya da yazabilirsin."
+sample ready "Mia hazır. İstersen adımı söyle."
 sample listening "Dinliyorum."
 sample stopping "Dinlemeyi kapatıyorum."
 sample help "Instagram, Play Konsol, web sitesi, arama veya dur diyebilirsin."

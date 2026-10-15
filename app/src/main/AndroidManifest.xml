@@ -12,7 +12,7 @@
         </intent>
     </queries>
     <application
-        android:label="ELXVRO JARVIS"
+        android:label="ELXVRO MIA"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">

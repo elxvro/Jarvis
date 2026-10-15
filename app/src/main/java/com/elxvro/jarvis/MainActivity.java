@@ -2,178 +2,263 @@ package com.elxvro.jarvis;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.speech.tts.TextToSpeech;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/** Accessible, large-touch-target UI; fully usable with no voice input. */
 public final class MainActivity extends Activity {
-    private static final int REQUEST_MIC = 502;
-    private TextView status;
-    private TextView voiceStatus;
-    private VoiceSpeaker voiceSpeaker;
-    private Button startButton;
-    private Button installButton;
+    private static final int REQ_MIC = 502;
+    private static final int WHITE = 0xffedf2fa;
+    private static final int MUTED = 0xffa6b7d0;
+    private static final int ACCENT = 0xff5ce3c0;
     private final ExecutorService workers = Executors.newSingleThreadExecutor();
+    private TextView status, voiceStatus;
+    private EditText typed;
+    private VoiceSpeaker voice;
+    private Button downloadButton, listenButton;
 
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    @Override public void onCreate(Bundle state) {
+        super.onCreate(state);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(12, 18, 31));
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(22), dp(34), dp(22), dp(22));
-        scroll.addView(column);
+        scroll.setBackgroundColor(0xff0d1527);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(30), dp(20), dp(30));
+        scroll.addView(root);
 
-        title(column, "ELXVRO", 28, 0xff53dec1);
-        title(column, "JARVIS", 42, Color.WHITE);
-        text(column, "v0.1.2 • Yerleşik Türkçe sesli asistan", 14, 0xffa2aec4);
-        space(column, 24);
-        title(column, "Hey Jarvis", 25, Color.WHITE);
-        text(column, "Dinlemeyi uygulama açıkken başlat. Ekranı kapatsan da Android izin verdiği sürece komutları algılar.", 15, 0xffd2dbeb);
-        space(column, 16);
-        status = text(column, "", 15, 0xff53dec1);
-        voiceStatus = text(column, "Türkçe ses hazırlanıyor...", 14, 0xffa9c5dc);
-        space(column, 16);
+        TextView brand = text(root, "ELXVRO", 19, ACCENT);
+        brand.setTypeface(null, Typeface.BOLD);
+        TextView heading = text(root, "MIA", 46, WHITE);
+        heading.setTypeface(null, Typeface.BOLD);
+        text(root, "v0.2.0 · Kolay konuşma ve dokunarak kullanım", 14, MUTED);
+        gap(root, 18);
+        TextView intro = text(root, "Sadece “Mia” demen yeterli.", 23, WHITE);
+        intro.setTypeface(null, Typeface.BOLD);
+        text(root, "Sözcükler arasında durabilirsin. Komut için 30 saniyeye kadar bekler; konuştuğunda süre yenilenir. İstersen hiç konuşmadan düğmeleri kullan.", 16, MUTED);
+        gap(root, 14);
 
-        button(column, "🔊  Yerleşik sesi test et", v -> {
-            if (voiceSpeaker != null) {
-                voiceSpeaker.say("Merhaba. Ben ELXVRO Jarvis. Seni duyuyorum ve sana Türkçe cevap verebilirim.",
-                        () -> voiceStatus.setText("Ses testi tamamlandı."));
+        status = text(root, "Hazırlanıyor...", 17, ACCENT);
+        voiceStatus = text(root, "Ses testi isteğe bağlı.", 15, MUTED);
+        gap(root, 15);
+
+        section(root, "Yazılı komut");
+        typed = new EditText(this);
+        typed.setSingleLine(true);
+        typed.setTextColor(WHITE);
+        typed.setHintTextColor(0xff96a5bf);
+        typed.setTextSize(19);
+        typed.setHint("Örn: Instagram aç");
+        typed.setPadding(dp(18), dp(12), dp(18), dp(12));
+        typed.setBackground(background(0xff1b2b43, 16));
+        typed.setContentDescription("Mia için yazılı komut");
+        root.addView(typed, new LinearLayout.LayoutParams(-1, dp(66)));
+        button(root, "Komutu çalıştır", 0xff236d60, v -> runTyped());
+
+        gap(root, 18);
+        section(root, "Tek dokunuşla aç");
+        button(root, "Instagram'ı aç", 0xff243751, v -> execute(CommandRouter.Kind.INSTAGRAM));
+        button(root, "Play Console'u aç", 0xff243751, v -> execute(CommandRouter.Kind.PLAY_CONSOLE));
+        button(root, "Web sitesini aç", 0xff243751, v -> execute(CommandRouter.Kind.WEBSITE));
+        button(root, "Telefon aramasını aç", 0xff243751, v -> execute(CommandRouter.Kind.PHONE));
+
+        gap(root, 18);
+        section(root, "Sesli kullanım");
+        button(root, "Hoparlörü test et", 0xff264a55, v -> {
+            if (voice != null) {
+                voiceStatus.setText("Test sesi başlatılıyor...");
+                voice.say("Merhaba. Ben Mia. İstersen konuşabilir ya da yazabilirsin.",
+                        () -> voiceStatus.setText("Ses testi tamamlandı. Duyulmadıysa medya sesini ve Bluetooth'u kontrol et."));
             }
         });
-        text(column, "İlk önce bu ses testini dene. Bu ses için Android konuşma hizmeti veya Türkçe TTS paketi gerekmez.", 13, 0xffa9c5dc);
-        button(column, "İsteğe bağlı: sistem TTS ayarları", v -> {
-            try {
-                startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
-            } catch (RuntimeException ex) {
-                startActivity(new Intent(Settings.ACTION_SETTINGS));
-            }
-        });
-        installButton = button(column, "1  ·  Türkçe tanıma modelini indir", v -> installModel());
-        startButton = button(column, "2  ·  Dinlemeyi başlat", v -> requestStart());
-        button(column, "Dinlemeyi durdur", v -> stopListening());
-        button(column, "Pil ayarlarını aç", v -> {
-            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
-        });
-        space(column, 20);
-        title(column, "Örnek komutlar", 19, Color.WHITE);
-        text(column, "“Hey Jarvis” → “Instagram”\n“Hey Jarvis” → “Play Console”\n“Hey Jarvis” → “Web sitesi”\n“Hey Jarvis” → “Arama”\n“Hey Jarvis” → “Dur”", 16, 0xffc5cedc);
-        space(column, 18);
-        text(column, "Güvenlik: Ses kaydı tutulmaz. Hesap şifresi istenmez. Bu sürüm bağlantıları bildirimle açar; hesaplarda değişiklik yapmaz.", 13, 0xff95a4bb);
+        downloadButton = button(root, "Türkçe tanıma modelini indir", 0xff243751, v -> installModel());
+        listenButton = button(root, "Mia'yı dinlemeye başlat", 0xff236d60, v -> requestStart());
+        button(root, "Dinlemeyi durdur", 0xff533646, v -> stopListening());
+        gap(root, 16);
+        button(root, "Pil ayarlarını aç", 0xff243751,
+                v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+        gap(root, 16);
+        text(root, "Örnek: “Mia” ... [duraklama] ... “Instagram”", 16, WHITE);
+        text(root, "Ses anlaşılmasa bile yazı ve büyük düğmeler çalışır. Ses kayıtları saklanmaz. Bu sürüm hesaplarını yönetmez; ilgili uygulamayı açar.", 14, MUTED);
         setContentView(scroll);
-        voiceSpeaker = new VoiceSpeaker(this, message -> voiceStatus.setText(message));
+        voice = new VoiceSpeaker(this, message -> runOnUiThread(() -> voiceStatus.setText(message)));
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 503);
         }
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        refreshStatus();
+    private void runTyped() {
+        String input = typed.getText().toString();
+        if (input.trim().isEmpty()) {
+            status.setText("Bir komut yaz veya aşağıdaki düğmelerden birine dokun.");
+            return;
+        }
+        CommandRouter.Kind kind = CommandRouter.classify(input);
+        execute(kind);
+        ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
+                .hideSoftInputFromWindow(typed.getWindowToken(), 0);
     }
 
-    private void refreshStatus() {
+    private void execute(CommandRouter.Kind kind) {
+        try {
+            switch (kind) {
+                case INSTAGRAM:
+                    open("https://www.instagram.com/");
+                    status.setText("Instagram açıldı.");
+                    break;
+                case PLAY_CONSOLE:
+                    open("https://play.google.com/console/");
+                    status.setText("Play Console açıldı.");
+                    break;
+                case WEBSITE:
+                    open("https://filtre.elxvro.com/");
+                    status.setText("Web sitesi açıldı.");
+                    break;
+                case PHONE:
+                    startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:")));
+                    status.setText("Telefon numarası ekranı açıldı.");
+                    break;
+                case STOP:
+                    stopListening();
+                    break;
+                case HELP:
+                    status.setText("Kullanılabilir komutlar: Instagram, konsol, site, arama, dur.");
+                    break;
+                default:
+                    status.setText("Komut anlaşılmadı. Tek kelime dene: Instagram, konsol, site veya arama.");
+            }
+        } catch (ActivityNotFoundException error) {
+            status.setText("Bu işlemi açabilecek uygulama bulunamadı.");
+        } catch (SecurityException error) {
+            status.setText("Bu işlem için Android izni gerekiyor.");
+        }
+    }
+
+    private void open(String url) {
+        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (downloadButton != null) refreshModel();
+    }
+
+    private void refreshModel() {
         boolean installed = ModelInstaller.installed(this);
-        status.setText(installed ? "Ses modeli hazır." : "İlk kullanım için Türkçe ses modelini indir.");
-        installButton.setEnabled(!installed);
-        startButton.setEnabled(installed);
+        downloadButton.setEnabled(!installed);
+        listenButton.setEnabled(installed);
+        if (installed) status.setText("Türkçe ses modeli hazır. Mia'yı başlatabilirsin.");
+        else status.setText("Yazı ve düğmeler hazır. Mikrofon için Türkçe modeli indir.");
     }
 
     private void installModel() {
-        installButton.setEnabled(false);
-        startButton.setEnabled(false);
+        downloadButton.setEnabled(false);
+        status.setText("Ses modeli indiriliyor...");
         workers.execute(() -> {
             try {
                 ModelInstaller.downloadAndInstall(this, message -> runOnUiThread(() -> status.setText(message)));
-                runOnUiThread(this::refreshStatus);
+                runOnUiThread(this::refreshModel);
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    status.setText("Model hatası: " + error.getMessage());
-                    installButton.setEnabled(true);
+                    status.setText("Model kurulamadı: " + error.getMessage());
+                    downloadButton.setEnabled(true);
                 });
             }
         });
     }
 
     private void requestStart() {
-        if (!ModelInstaller.installed(this)) { refreshStatus(); return; }
+        if (!ModelInstaller.installed(this)) { refreshModel(); return; }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
             return;
         }
-        Intent start = new Intent(this, JarvisService.class);
-        start.setAction(JarvisService.ACTION_START);
-        // Must be called while this Activity is visible (microphone WIU restriction).
-        startForegroundService(start);
-        status.setText("Dinleme başlatıldı. Kalıcı bildirimi kontrol et.");
-    }
-
-    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_MIC) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) requestStart();
-            else status.setText("Dinleme için mikrofon izni gerekir.");
+        try {
+            Intent intent = new Intent(this, JarvisService.class);
+            intent.setAction(JarvisService.ACTION_START);
+            startForegroundService(intent);
+            status.setText("Mia dinliyor. Ekran kapalıyken Android izinleri geçerli.");
+        } catch (RuntimeException error) {
+            status.setText("Dinleme başlatılamadı: " + error.getMessage());
         }
     }
 
     private void stopListening() {
-        Intent stop = new Intent(this, JarvisService.class);
-        stop.setAction(JarvisService.ACTION_STOP);
-        startService(stop);
-        status.setText("Dinleme durduruluyor.");
+        stopService(new Intent(this, JarvisService.class));
+        status.setText("Dinleme durduruldu.");
     }
 
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
+        super.onRequestPermissionsResult(requestCode, permissions, grants);
+        if (requestCode == REQ_MIC) {
+            if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) requestStart();
+            else status.setText("Mikrofon izni yok. Yazılı komutları kullanabilirsin.");
+        }
+    }
+
+    private Button button(LinearLayout root, String caption, int color, View.OnClickListener action) {
+        Button b = new Button(this);
+        b.setAllCaps(false);
+        b.setText(caption);
+        b.setTextSize(18);
+        b.setTextColor(Color.WHITE);
+        b.setContentDescription(caption);
+        b.setBackground(background(color, 18));
+        b.setOnClickListener(action);
+        b.setMinHeight(dp(70));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(72));
+        lp.topMargin = dp(9);
+        root.addView(b, lp);
+        return b;
+    }
+
+    private GradientDrawable background(int color, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
+    private void section(LinearLayout root, String name) {
+        TextView t = text(root, name, 19, WHITE);
+        t.setTypeface(null, Typeface.BOLD);
+    }
+    private void gap(LinearLayout root, int height) {
+        root.addView(new View(this), new LinearLayout.LayoutParams(1, dp(height)));
+    }
+    private TextView text(LinearLayout root, String value, int sp, int color) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        t.setLineSpacing(dp(3), 1f);
+        root.addView(t, new LinearLayout.LayoutParams(-1, -2));
+        return t;
+    }
+    private int dp(int d) { return Math.round(getResources().getDisplayMetrics().density * d); }
     @Override protected void onDestroy() {
-        if (voiceSpeaker != null) voiceSpeaker.shutdown();
         workers.shutdown();
+        if (voice != null) voice.shutdown();
         super.onDestroy();
-    }
-
-    private int dp(int value) { return Math.round(getResources().getDisplayMetrics().density * value); }
-
-    private void space(LinearLayout box, int px) {
-        View blank = new View(this);
-        box.addView(blank, new LinearLayout.LayoutParams(1, dp(px)));
-    }
-
-    private TextView title(LinearLayout root, String message, int sp, int color) {
-        TextView tv = text(root, message, sp, color);
-        tv.setTypeface(null, 1);
-        return tv;
-    }
-
-    private TextView text(LinearLayout root, String message, int sp, int color) {
-        TextView view = new TextView(this);
-        view.setText(message);
-        view.setTextColor(color);
-        view.setTextSize(sp);
-        view.setLineSpacing(dp(3), 1f);
-        root.addView(view, new LinearLayout.LayoutParams(-1, -2));
-        return view;
-    }
-
-    private Button button(LinearLayout root, String label, View.OnClickListener action) {
-        Button button = new Button(this);
-        button.setAllCaps(false);
-        button.setText(label);
-        button.setOnClickListener(action);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(58));
-        params.topMargin = dp(8);
-        root.addView(button, params);
-        return button;
     }
 }
