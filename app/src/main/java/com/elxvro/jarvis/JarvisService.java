@@ -120,7 +120,7 @@ public final class JarvisService extends Service implements RecognitionListener 
         update("Ses tanıma hatası: " + error.getMessage());
         stopSelf();
     }
-    @Override public void onTimeout() { awaitingCommand = false; update("Dinliyor · Hey Jarvis de"); }
+    @Override public void onTimeout() { awaitingCommand = false; wakeSession.cancel(); update("Dinliyor · Mia de"); }
 
     private void accept(String rawJson) {
         if (speaking) return;
@@ -289,7 +289,7 @@ public final class JarvisService extends Service implements RecognitionListener 
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder n = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle("ELXVRO JARVIS")
+                .setContentTitle("ELXVRO MIA")
                 .setContentText(status)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

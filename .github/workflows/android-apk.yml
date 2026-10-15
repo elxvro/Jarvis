@@ -27,6 +27,28 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y espeak-ng
           bash scripts/generate_voice_assets.sh
+      - name: Include verified Turkish Vosk model in APK
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets/models
+          MODEL="app/src/main/assets/models/vosk-model-small-tr-0.3.zip"
+          curl --fail --location --retry 3 --retry-delay 4 --connect-timeout 30 --max-time 240 \
+            "https://alphacephei.com/vosk/models/vosk-model-small-tr-0.3.zip" \
+            -o "$MODEL"
+          echo "8c8d07cec1bce31add14967c16891c84152cdf76d391e33c08278119b9ea96e5  $MODEL" | sha256sum --check
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          p = Path("app/src/main/assets/models/vosk-model-small-tr-0.3.zip")
+          with ZipFile(p) as z:
+              names = set(z.namelist())
+              prefix = "vosk-model-small-tr-0.3/"
+              old = {prefix + p for p in ("final.mdl", "mfcc.conf", "HCLr.fst", "Gr.fst")}
+              modern = {prefix + p for p in ("am/final.mdl", "conf/model.conf")}
+              assert old.issubset(names) or modern.issubset(names), "Unexpected Vosk layout: " + str(list(sorted(names))[:12])
+              assert z.testzip() is None, "Corrupt Vosk ZIP"
+              print("Vosk model verified:", "legacy" if old.issubset(names) else "modern", len(names), "entries")
+          PY
       - name: Test and build
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
       - name: Upload installable APK

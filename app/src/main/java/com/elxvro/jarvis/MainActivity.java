@@ -51,7 +51,7 @@ public final class MainActivity extends Activity {
         brand.setTypeface(null, Typeface.BOLD);
         TextView heading = text(root, "MIA", 46, WHITE);
         heading.setTypeface(null, Typeface.BOLD);
-        text(root, "v0.2.0 · Kolay konuşma ve dokunarak kullanım", 14, MUTED);
+        text(root, "v0.2.1 · Hazır Türkçe model · Büyük düğmeler", 14, MUTED);
         gap(root, 18);
         TextView intro = text(root, "Sadece “Mia” demen yeterli.", 23, WHITE);
         intro.setTypeface(null, Typeface.BOLD);
@@ -91,7 +91,7 @@ public final class MainActivity extends Activity {
                         () -> voiceStatus.setText("Ses testi tamamlandı. Duyulmadıysa medya sesini ve Bluetooth'u kontrol et."));
             }
         });
-        downloadButton = button(root, "Türkçe tanıma modelini indir", 0xff243751, v -> installModel());
+        downloadButton = button(root, "Türkçe modeli APK’dan kur", 0xff243751, v -> installModel());
         listenButton = button(root, "Mia'yı dinlemeye başlat", 0xff236d60, v -> requestStart());
         button(root, "Dinlemeyi durdur", 0xff533646, v -> stopListening());
         gap(root, 16);
@@ -99,9 +99,13 @@ public final class MainActivity extends Activity {
                 v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
         gap(root, 16);
         text(root, "Örnek: “Mia” ... [duraklama] ... “Instagram”", 16, WHITE);
-        text(root, "Ses anlaşılmasa bile yazı ve büyük düğmeler çalışır. Ses kayıtları saklanmaz. Bu sürüm hesaplarını yönetmez; ilgili uygulamayı açar.", 14, MUTED);
+        text(root, "Türkçe model artık uygulamaya dahildir; internet gerekmez. Ses anlaşılmasa bile yazılı komutlar ve büyük düğmeler çalışır. Hesap değişiklikleri henüz desteklenmiyor.", 14, MUTED);
         setContentView(scroll);
         voice = new VoiceSpeaker(this, message -> runOnUiThread(() -> voiceStatus.setText(message)));
+        // Install the bundled model once on first launch, off the UI thread.
+        if (!ModelInstaller.installed(this)) {
+            installModel();
+        }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 503);
@@ -169,15 +173,15 @@ public final class MainActivity extends Activity {
         downloadButton.setEnabled(!installed);
         listenButton.setEnabled(installed);
         if (installed) status.setText("Türkçe ses modeli hazır. Mia'yı başlatabilirsin.");
-        else status.setText("Yazı ve düğmeler hazır. Mikrofon için Türkçe modeli indir.");
+        else status.setText("Model kurulmadı. APK içindeki modeli yeniden kurabilirsin.");
     }
 
     private void installModel() {
         downloadButton.setEnabled(false);
-        status.setText("Ses modeli indiriliyor...");
+        status.setText("Türkçe model APK içinden kuruluyor...");
         workers.execute(() -> {
             try {
-                ModelInstaller.downloadAndInstall(this, message -> runOnUiThread(() -> status.setText(message)));
+                ModelInstaller.installBundled(this, message -> runOnUiThread(() -> status.setText(message)));
                 runOnUiThread(this::refreshModel);
             } catch (Exception error) {
                 runOnUiThread(() -> {

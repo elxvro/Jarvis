@@ -1,6 +1,13 @@
-# ELXVRO MIA v0.2.0
+# ELXVRO MIA v0.2.1
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
+
+## Mia v0.2.1 — Türkçe tanıma modeli onarımı
+- Eski Türkçe Vosk modeli **legacy** `final.mdl / mfcc.conf / HCLr.fst / Gr.fst` klasör yapısındadır. Önceki uygulama yanlışlıkla `am/final.mdl / conf/model.conf` kontrolü yaptığı için “İndirilen model geçersiz” hatası oluşuyordu.
+- Uygulama artık her iki Vosk model yapısını destekliyor.
+- 35 MB Türkçe model ZIP, APK derlemesinde resmî kaynaktan SHA-256 ile doğrulanarak uygulamaya ekleniyor.
+- İlk açılışta otomatik ve **çevrimdışı** kurulum; tekrar indirme gerekmez. İlk kurulum cihazın hızına göre biraz sürebilir.
+- Github Actions, modelin gerçek dosya düzenini ve ZIP CRC'sini doğrulamadan APK yayımlamaz.
 
 ## Mia v0.2.0 — erişilebilir kontrol
 - **Tek kelimelik uyandırma:** “Mia” (alternatif telaffuzlar “miya”, “miyya”, “miiya”). “Hey” söylemek zorunlu değil.
@@ -31,7 +38,7 @@ Google Play Console API ile uygulama yayınlama, Instagram Graph API paylaşım�
 2. İşlem tamamlandığında **ELXVRO-MIA-debug-APK** artefaktını indir.
 3. ZIP içindeki \`app-debug.apk\` dosyasını Android'e yükle (bilinmeyen kaynaktan yükleme izni gerekebilir).
 4. Uygulamayı aç. Bildirim ve mikrofon izinlerini ver.
-5. "Türkçe modeli indir" düğmesine bas; internet yalnızca model indirme için gerekir.
+5. Türkçe model uygulamaya gömülüdür; ilk açılışta kendiliğinden kurulur. İnternet gerekmez.
 6. Model tamamlanınca "Dinlemeyi başlat" düğmesine bas, ekranı kapat, "Mia" de. Ardından "Instagram", "Play Console", "site" veya "yardım" de.
 
 > Android 14+ üzerinde bir mikrofon foreground service'i arka planda keyfi olarak başlatılamaz. Önce uygulama görünürken etkinleştirmek gerekir. Sistem, OEM pil optimizasyonu veya kullanıcı servisi durdurursa, uygulamadan yeniden başlatılmalıdır. Uygulama kendi kendine yeniden başlatılmayacak; açılışta mikrofon dinlemeye başlamaz.

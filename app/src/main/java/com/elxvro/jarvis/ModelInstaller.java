@@ -7,125 +7,136 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Downloads the Apache-2.0 licensed Vosk Turkish mobile model directly from the
- * published model host. Call from a worker thread, never on the UI thread.
+ * Installs the offline Turkish model bundled in the APK. The historical
+ * vosk-model-small-tr-0.3 has the Vosk v1 layout (final.mdl + mfcc.conf at
+ * model root). Do not require v2 am/ and conf/ directories for this model.
  */
 public final class ModelInstaller {
     private ModelInstaller() {}
-    private static final String URL_STRING =
-            "https://alphacephei.com/vosk/models/vosk-model-small-tr-0.3.zip";
-    private static final String MODEL_NAME = "vosk-model-small-tr-0.3";
-    private static final long MAX_EXTRACTED_BYTES = 450L * 1024L * 1024L;
 
     public interface Progress { void update(String message); }
+
+    private static final String MODEL_NAME = "vosk-model-small-tr-0.3";
+    private static final String ASSET = "models/" + MODEL_NAME + ".zip";
+    private static final long MAX_EXTRACTED_BYTES = 450L * 1024L * 1024L;
+    private static final int MAX_ENTRIES = 3000;
 
     public static File modelDir(Context context) {
         return new File(context.getFilesDir(), "models/" + MODEL_NAME);
     }
 
-    public static boolean installed(Context context) {
-        File root = modelDir(context);
-        return new File(root, "am/final.mdl").isFile()
-                && new File(root, "conf/model.conf").isFile();
+    public static boolean isValidModel(File root) {
+        if (!root.isDirectory()) return false;
+        // Vosk native API accepts two supported layouts.
+        boolean legacy = new File(root, "final.mdl").isFile()
+                && new File(root, "mfcc.conf").isFile()
+                && new File(root, "HCLr.fst").isFile()
+                && new File(root, "Gr.fst").isFile();
+        boolean modern = new File(root, "am/final.mdl").isFile()
+                && new File(root, "conf/model.conf").isFile()
+                && (new File(root, "graph/HCLG.fst").isFile()
+                    || (new File(root, "graph/HCLr.fst").isFile()
+                        && new File(root, "graph/Gr.fst").isFile()));
+        return legacy || modern;
     }
 
-    public static void downloadAndInstall(Context context, Progress progress) throws Exception {
+    public static boolean installed(Context context) {
+        return isValidModel(modelDir(context));
+    }
+
+    /**
+     * Called on a background worker thread; never on the main/UI thread.
+     * No internet permission or separate model download is required.
+     */
+    public static void installBundled(Context context, Progress progress) throws Exception {
         if (installed(context)) {
-            progress.update("Türkçe model zaten kurulu.");
+            progress.update("Türkçe tanıma modeli hazır.");
             return;
         }
-        File zipFile = new File(context.getCacheDir(), MODEL_NAME + ".partial.zip");
         File modelsBase = new File(context.getFilesDir(), "models");
         File temp = new File(context.getFilesDir(), "models-installing");
         deleteRecursively(temp);
-        if (!temp.mkdirs()) throw new IllegalStateException("Geçici klasör oluşturulamadı");
-        HttpURLConnection connection = null;
+        if (!temp.mkdirs()) throw new IllegalStateException("Model için alan oluşturulamadı");
         try {
-            progress.update("Türkçe ses modeli indiriliyor (~35 MB)...");
-            connection = (HttpURLConnection) new URL(URL_STRING).openConnection();
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(30000);
-            connection.setInstanceFollowRedirects(true);
-            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                throw new IllegalStateException("Model indirilemedi, HTTP " + connection.getResponseCode());
+            progress.update("APK içindeki Türkçe model kuruluyor...");
+            try (InputStream input = new BufferedInputStream(context.getAssets().open(ASSET))) {
+                unpack(input, temp);
             }
-            try (InputStream in = new BufferedInputStream(connection.getInputStream());
-                 FileOutputStream out = new FileOutputStream(zipFile)) {
-                byte[] block = new byte[32768];
-                int n;
-                long received = 0L;
-                while ((n = in.read(block)) >= 0) {
-                    if (n == 0) continue;
-                    received += n;
-                    if (received > 100L * 1024L * 1024L) {
-                        throw new IllegalStateException("Model ZIP sınırı aşıldı");
-                    }
-                    out.write(block, 0, n);
-                }
+            File unpacked = new File(temp, MODEL_NAME);
+            if (!isValidModel(unpacked)) {
+                throw new IllegalStateException("Kurulan modelin dosya yapısı beklenenden farklı");
             }
-            progress.update("Model ayıklanıyor...");
-            String safeRoot = temp.getCanonicalPath() + File.separator;
-            long extracted = 0;
-            try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(
-                    new java.io.FileInputStream(zipFile)))) {
-                ZipEntry entry;
-                byte[] buf = new byte[32768];
-                while ((entry = zip.getNextEntry()) != null) {
-                    File target = new File(temp, entry.getName());
-                    String canonical = target.getCanonicalPath();
-                    if (!canonical.startsWith(safeRoot)) {
-                        throw new SecurityException("Güvensiz ZIP yolu");
-                    }
-                    if (entry.isDirectory()) {
-                        if (!target.isDirectory() && !target.mkdirs()) throw new IllegalStateException("Klasör oluşturulamadı");
-                    } else {
-                        File parent = target.getParentFile();
-                        if (!parent.isDirectory() && !parent.mkdirs()) throw new IllegalStateException("Dizin oluşturulamadı");
-                        try (BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
-                            int n;
-                            while ((n = zip.read(buf)) > 0) {
-                                extracted += n;
-                                if (extracted > MAX_EXTRACTED_BYTES) throw new IllegalStateException("Model çok büyük");
-                                out.write(buf, 0, n);
-                            }
-                        }
-                    }
-                    zip.closeEntry();
-                }
-            }
-            File downloadedModel = new File(temp, MODEL_NAME);
-            if (!new File(downloadedModel, "am/final.mdl").isFile() ||
-                !new File(downloadedModel, "conf/model.conf").isFile()) {
-                throw new IllegalStateException("İndirilen model geçersiz");
-            }
-            if (!modelsBase.isDirectory() && !modelsBase.mkdirs()) {
+            progress.update("Türkçe model doğrulandı, tamamlanıyor...");
+            if (!modelsBase.exists() && !modelsBase.mkdirs()) {
                 throw new IllegalStateException("Model klasörü oluşturulamadı");
             }
-            File finalModel = modelDir(context);
-            deleteRecursively(finalModel);
-            if (!downloadedModel.renameTo(finalModel)) {
-                throw new IllegalStateException("Model taşınamadı");
+            File destination = modelDir(context);
+            deleteRecursively(destination);
+            if (!unpacked.renameTo(destination)) {
+                throw new IllegalStateException("Model dosyaları taşınamadı");
             }
-            progress.update("Model hazır. Dinlemeyi başlatabilirsin.");
+            if (!installed(context)) {
+                throw new IllegalStateException("Kurulu model denetlenemedi");
+            }
+            progress.update("Model hazır. Mia'yı dinlemeye başlatabilirsin.");
         } finally {
-            if (connection != null) connection.disconnect();
-            if (zipFile.exists()) zipFile.delete();
             deleteRecursively(temp);
         }
     }
 
-    private static void deleteRecursively(File f) {
-        if (!f.exists()) return;
-        if (f.isDirectory()) {
-            File[] children = f.listFiles();
+    private static void unpack(InputStream input, File temp) throws Exception {
+        String safeRoot = temp.getCanonicalPath() + File.separator;
+        long extracted = 0;
+        int count = 0;
+        try (ZipInputStream zip = new ZipInputStream(input)) {
+            ZipEntry entry;
+            byte[] data = new byte[32768];
+            while ((entry = zip.getNextEntry()) != null) {
+                if (++count > MAX_ENTRIES) throw new IllegalStateException("Model arşivi çok fazla dosya içeriyor");
+                File target = new File(temp, entry.getName());
+                String canonical = target.getCanonicalPath();
+                if (!canonical.startsWith(safeRoot)) {
+                    throw new SecurityException("Geçersiz model yolu");
+                }
+                if (entry.isDirectory()) {
+                    if (!target.isDirectory() && !target.mkdirs()) {
+                        throw new IllegalStateException("Klasör oluşturulamadı");
+                    }
+                } else {
+                    File parent = target.getParentFile();
+                    if (!parent.isDirectory() && !parent.mkdirs()) {
+                        throw new IllegalStateException("Model klasörü oluşturulamadı");
+                    }
+                    try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
+                        int length;
+                        while ((length = zip.read(data)) != -1) {
+                            if (length == 0) continue;
+                            extracted += length;
+                            if (extracted > MAX_EXTRACTED_BYTES) {
+                                throw new IllegalStateException("Model boyutu güvenlik sınırını aştı");
+                            }
+                            output.write(data, 0, length);
+                        }
+                    }
+                }
+                zip.closeEntry();
+            }
+        }
+        if (count == 0) throw new IllegalStateException("Model arşivi boş");
+    }
+
+    private static void deleteRecursively(File file) throws Exception {
+        if (!file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
             if (children != null) for (File child : children) deleteRecursively(child);
         }
-        if (!f.delete() && f.exists()) throw new IllegalStateException("Dosya temizlenemedi");
+        if (!file.delete() && file.exists()) {
+            throw new IllegalStateException("Geçici model dosyası temizlenemedi");
+        }
     }
 }
