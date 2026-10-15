@@ -21,6 +21,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +33,7 @@ import java.util.concurrent.Executors;
 /** Accessible, large-touch-target UI; fully usable with no voice input. */
 public final class MainActivity extends Activity {
     private static final int REQ_MIC = 502;
+    private static final int REQ_GGUF = 609;
     private static final int WHITE = 0xffedf2fa;
     private static final int MUTED = 0xffa6b7d0;
     private static final int ACCENT = 0xff5ce3c0;
@@ -36,6 +42,11 @@ public final class MainActivity extends Activity {
     private EditText typed;
     private VoiceSpeaker voice;
     private Button downloadButton, listenButton;
+    private EditText aiInput;
+    private TextView aiStatus, aiOutput;
+    private Button aiSend;
+    private LocalAiBridge localAi;
+    private final StringBuilder generated = new StringBuilder();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -51,7 +62,7 @@ public final class MainActivity extends Activity {
         brand.setTypeface(null, Typeface.BOLD);
         TextView heading = text(root, "MIA", 46, WHITE);
         heading.setTypeface(null, Typeface.BOLD);
-        text(root, "v0.2.1 · Hazır Türkçe model · Büyük düğmeler", 14, MUTED);
+        text(root, "v0.3.0 · Yerel yapay zekâ · Ücretsiz · İnternetsiz sohbet", 14, MUTED);
         gap(root, 18);
         TextView intro = text(root, "Sadece “Mia” demen yeterli.", 23, WHITE);
         intro.setTypeface(null, Typeface.BOLD);
@@ -62,6 +73,27 @@ public final class MainActivity extends Activity {
         voiceStatus = text(root, "Ses testi isteğe bağlı.", 15, MUTED);
         gap(root, 15);
 
+        section(root, "MIA — Cihazda çalışan yapay zekâ");
+        text(root, "1. GGUF modelini telefona indir. 2. Modeli seç. 3. Türkçe sorunu yaz. Soru ve yanıtlar sunucuya gönderilmez.", 15, MUTED);
+        aiStatus = text(root, "Yapay zekâ modeli seçilmedi.", 15, ACCENT);
+        button(root, "Yerel GGUF modelini seç", 0xff264a55, v -> chooseModel());
+        button(root, "Önerilen ücretsiz modeli bul (1.5B)", 0xff243751, v ->
+            open("https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/blob/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"));
+        aiInput = new EditText(this);
+        aiInput.setSingleLine(false);
+        aiInput.setMinLines(2);
+        aiInput.setMaxLines(5);
+        aiInput.setTextColor(WHITE);
+        aiInput.setHintTextColor(0xff96a5bf);
+        aiInput.setTextSize(18);
+        aiInput.setHint("MIA'ya bir soru yaz...");
+        aiInput.setPadding(dp(16), dp(12), dp(16), dp(12));
+        aiInput.setBackground(background(0xff1b2b43, 16));
+        root.addView(aiInput, new LinearLayout.LayoutParams(-1, -2));
+        aiSend = button(root, "MIA'ya sor (yalnızca telefonda)", 0xff236d60, v -> askLocal());
+        aiOutput = text(root, "Yanıt burada görünecek.", 17, WHITE);
+        aiOutput.setTextIsSelectable(true);
+        gap(root, 22);
         section(root, "Yazılı komut");
         typed = new EditText(this);
         typed.setSingleLine(true);
@@ -102,6 +134,16 @@ public final class MainActivity extends Activity {
         text(root, "Türkçe model artık uygulamaya dahildir; internet gerekmez. Ses anlaşılmasa bile yazılı komutlar ve büyük düğmeler çalışır. Hesap değişiklikleri henüz desteklenmiyor.", 14, MUTED);
         setContentView(scroll);
         voice = new VoiceSpeaker(this, message -> runOnUiThread(() -> voiceStatus.setText(message)));
+        localAi = new LocalAiBridge(this, new LocalAiBridge.Listener() {
+            @Override public void onStatus(String message) { aiStatus.setText(message); }
+            @Override public void onToken(String token) {
+                if (token.isEmpty()) generated.setLength(0);
+                else generated.append(token);
+                aiOutput.setText(generated.toString());
+            }
+            @Override public void onDone() { aiStatus.setText("Yanıt telefonda üretildi."); }
+            @Override public void onError(String message) { aiStatus.setText(message); }
+        });
         // Install the bundled model once on first launch, off the UI thread.
         if (!ModelInstaller.installed(this)) {
             installModel();
@@ -110,6 +152,90 @@ public final class MainActivity extends Activity {
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 503);
         }
+    }
+
+    private void chooseModel() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent, REQ_GGUF);
+        } catch (ActivityNotFoundException ex) {
+            aiStatus.setText("Dosya seçici bulunamadı.");
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_GGUF || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri selected = data.getData();
+        String name = "";
+        try (Cursor c = getContentResolver().query(selected, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int col = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (col >= 0) name = c.getString(col);
+            }
+        } catch (RuntimeException ignored) { }
+        if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".gguf")) {
+            aiStatus.setText("Lütfen .gguf uzantılı yerel yapay zekâ dosyası seç.");
+            return;
+        }
+        aiStatus.setText("Model özel uygulama alanına kopyalanıyor...");
+        workers.execute(() -> {
+            try {
+                File dir = new File(getFilesDir(), "local-ai");
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("Model klasörü açılamadı");
+                File tmp = new File(dir, "mia-model.part");
+                File target = new File(dir, "mia-model.gguf");
+                long copied = 0L;
+                try (InputStream in = getContentResolver().openInputStream(selected);
+                     FileOutputStream out = new FileOutputStream(tmp)) {
+                    if (in == null) throw new Exception("Seçilen dosya okunamadı");
+                    byte[] buf = new byte[1024 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        if (n <= 0) continue;
+                        copied += n;
+                        if (copied > 5L * 1024L * 1024L * 1024L)
+                            throw new Exception("Maksimum GGUF boyutu 5 GB");
+                        out.write(buf, 0, n);
+                        if (copied % (64L * 1024L * 1024L) < n) {
+                            long mb = copied / (1024L * 1024L);
+                            runOnUiThread(() -> aiStatus.setText("Model kopyalanıyor: " + mb + " MB"));
+                        }
+                    }
+                } catch (Exception ex) {
+                    tmp.delete();
+                    throw ex;
+                }
+                if (copied < 16L * 1024L * 1024L) throw new Exception("GGUF dosyası eksik görünüyor");
+                try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(tmp, "r")) {
+                    byte[] magic = new byte[4];
+                    raf.readFully(magic);
+                    if (magic[0] != 'G' || magic[1] != 'G' || magic[2] != 'U' || magic[3] != 'F') {
+                        throw new Exception("Seçilen dosya geçerli GGUF değil");
+                    }
+                }
+                if (target.exists() && !target.delete()) throw new Exception("Eski model silinemedi");
+                if (!tmp.renameTo(target)) throw new Exception("Model kaydedilemedi");
+                runOnUiThread(() -> {
+                    aiStatus.setText("GGUF doğrulandı. Yerel model yükleniyor...");
+                    localAi.loadModel(target.getAbsolutePath());
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> aiStatus.setText("Model aktarımı başarısız: " + ex.getMessage()));
+            }
+        });
+    }
+
+    private void askLocal() {
+        if (localAi == null) return;
+        String question = aiInput.getText().toString().trim();
+        if (question.isEmpty()) { aiStatus.setText("Önce soru yaz."); return; }
+        aiStatus.setText("MIA çevrimdışı düşünüyor...");
+        localAi.ask(question);
+        ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
+                .hideSoftInputFromWindow(aiInput.getWindowToken(), 0);
     }
 
     private void runTyped() {
@@ -263,6 +389,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         workers.shutdown();
         if (voice != null) voice.shutdown();
+        if (localAi != null) localAi.close();
         super.onDestroy();
     }
 }

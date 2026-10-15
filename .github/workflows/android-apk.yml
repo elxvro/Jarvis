@@ -9,7 +9,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -49,6 +49,22 @@ jobs:
               assert z.testzip() is None, "Corrupt Vosk ZIP"
               print("Vosk model verified:", "legacy" if old.issubset(names) else "modern", len(names), "entries")
           PY
+      - name: Prepare official on-device llama.cpp inference engine
+        run: |
+          set -euo pipefail
+          mkdir -p .native
+          git clone --depth 1 --branch v0.6.0 --filter=blob:none             https://github.com/ggml-org/llama.cpp.git .native/llama.cpp
+          cp .native/llama.cpp/examples/llama.android/gradle/libs.versions.toml gradle/libs.versions.toml
+          sed -i 's/agp = "8.13.2"/agp = "8.11.1"/' gradle/libs.versions.toml
+          sed -i 's/kotlin = "2.3.0"/kotlin = "2.2.20"/' gradle/libs.versions.toml
+          LIB=.native/llama.cpp/examples/llama.android/lib/build.gradle.kts
+          sed -i 's/"29.0.13113456"/"28.2.13676358"/' "$LIB"
+          sed -i 's/listOf("arm64-v8a", "x86_64")/listOf("arm64-v8a")/' "$LIB"
+          sed -i 's/-DGGML_CPU_ALL_VARIANTS=ON/-DGGML_CPU_ALL_VARIANTS=OFF/' "$LIB"
+          sed -i 's/-DGGML_BACKEND_DL=ON/-DGGML_BACKEND_DL=OFF/' "$LIB"
+          sed -i 's/-DGGML_OPENMP=ON/-DGGML_OPENMP=OFF/' "$LIB"
+          sed -i '/arguments += "-DGGML_LLAMAFILE=OFF"/a\                arguments += "-DGGML_CPU_KLEIDIAI=OFF"\n                arguments += "-DGGML_OPENMP=OFF"' "$LIB"
+          sdkmanager --install "ndk;28.2.13676358" "cmake;3.31.6"
       - name: Test and build
         run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
       - name: Upload installable APK

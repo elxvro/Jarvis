@@ -1,6 +1,14 @@
-# ELXVRO MIA v0.2.1
+# ELXVRO MIA v0.3.0 — gerçek yerel AI
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
+
+## v0.3.0 — yerel yapay zekâ
+- **Gerçek çıkarım:** [llama.cpp v0.6.0](https://github.com/ggml-org/llama.cpp/releases/tag/v0.6.0) resmî Android JNI kütüphanesi derleniyor; modeller telefonda çalışıyor. Kod GPL vs MIT lisanslarına uygun biçimde kaynak depoda ve upstream bağımlılığında açık.
+- **Ücretsiz GGUF model:** 12 GB RAM için tavsiye edilen [Qwen2.5-1.5B Instruct Q4_K_M](https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/blob/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf) (~1 GB). Model APK'da değildir, ayrıca indirip dosya seçiciden seçersin.
+- **Yerel sohbet:** Soru, metin üretimi ve sistem yönlendirmesi ağ servisine gönderilmez. Modeller uygulamanın gizli dosya alanına kopyalanır. Dinamik sonuçlar ekranda görünür.
+- **Donanım:** HONOR 400, 12 GB RAM, arm64-v8a; CPU öncelikli. Başlangıçta büyük bağlam, 7B, GPU ve sunucu otomasyonu yoktur.
+- **Güvenlik:** AI görev eylemleri tetikleyemez; hesap yönetimi bağlantıları yalnızca kullanıcı onayıyla açılır.
+- **Uyarı:** Android gerçek cihaz performansı ayrı test gerektirir; derleme başarısı tek başına çalışma garantisi vermez.
 
 ## Mia v0.2.1 — Türkçe tanıma modeli onarımı
 - Eski Türkçe Vosk modeli **legacy** `final.mdl / mfcc.conf / HCLr.fst / Gr.fst` klasör yapısındadır. Önceki uygulama yanlışlıkla `am/final.mdl / conf/model.conf` kontrolü yaptığı için “İndirilen model geçersiz” hatası oluşuyordu.

@@ -12,5 +12,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ELXVRO-JARVIS"
+rootProject.name = "ELXVRO-MIA"
 include(":app")
+include(":lib")
+project(":lib").projectDir = file(".native/llama.cpp/examples/llama.android/lib")
