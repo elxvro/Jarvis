@@ -43,6 +43,9 @@ GitHub Actions **debug** imza anahtarını her çalışmada yeniden üretebilir.
 - Telefon kilidini aşmaz; işlem için kullanıcı etkileşimi gerektiğinde bildirim açılır.
 - APK **debug imzalıdır**, Play Store dağıtımı için değildir. Uygulama güncellemeleri için aynı imzanın korunması gerekir; GitHub Actions debug anahtarı her derlemede değişebilir, bunun için sonraki sürümde sabit özel imza gerekir.
 
+## Derleme durumu
+Bu sürümde GitHub Actions ile sesli yanıt içeren debug APK oluşturulur. Android cihazda gerçek mikrofon/hoparlör testi ayrıca yapılmalıdır.
+
 ## Sonraki sürüm
 İzinli rehberden arama, Instagram profesyonel hesap OAuth, Google Play Developer API servis hesabı yetkilendirmesi, hosting için SSH/SFTP tabanlı dar yetkili erişim ve kritik işlemlerde onay akışı.
 
