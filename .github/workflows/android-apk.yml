@@ -54,6 +54,7 @@ jobs:
           set -euo pipefail
           mkdir -p .native
           git clone --depth 1 --branch v0.6.0 --filter=blob:none             https://github.com/ggml-org/llama.cpp.git .native/llama.cpp
+          mkdir -p gradle
           cp .native/llama.cpp/examples/llama.android/gradle/libs.versions.toml gradle/libs.versions.toml
           sed -i 's/agp = "8.13.2"/agp = "8.11.1"/' gradle/libs.versions.toml
           sed -i 's/kotlin = "2.3.0"/kotlin = "2.2.20"/' gradle/libs.versions.toml
