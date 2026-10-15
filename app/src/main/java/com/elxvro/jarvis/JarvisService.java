@@ -1,0 +1,243 @@
+package com.elxvro.jarvis;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.os.SystemClock;
+
+import org.json.JSONObject;
+import org.vosk.Model;
+import org.vosk.Recognizer;
+import org.vosk.android.RecognitionListener;
+import org.vosk.android.SpeechService;
+
+/**
+ * User-started visible microphone foreground service. No covert or reboot
+ * microphone restart. No unlock bypass, no unattended changes to accounts.
+ */
+public final class JarvisService extends Service implements RecognitionListener {
+    public static final String ACTION_START = "com.elxvro.jarvis.action.START";
+    public static final String ACTION_STOP = "com.elxvro.jarvis.action.STOP";
+    private static final String CHANNEL = "jarvis_listening";
+    private static final int NOTIFICATION_ID = 71;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private SpeechService speech;
+    private Recognizer recognizer;
+    private Model model;
+    private PowerManager.WakeLock wakeLock;
+    private boolean loading = false;
+    private boolean awaitingCommand = false;
+    private long suppressUntil = 0L;
+    private Runnable commandTimeout;
+
+    @Override public void onCreate() {
+        super.onCreate();
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "JARVIS dinleme",
+                NotificationManager.IMPORTANCE_LOW));
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (!ModelInstaller.installed(this)) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, statusNotification("Ses modeli hazırlanıyor...", null),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        } else {
+            startForeground(NOTIFICATION_ID, statusNotification("Ses modeli hazırlanıyor...", null));
+        }
+        if (!loading && speech == null) {
+            loading = true;
+            new Thread(this::initializeAudio, "jarvis-vosk-model").start();
+        }
+        return START_NOT_STICKY;
+    }
+
+    private void initializeAudio() {
+        try {
+            Model m = new Model(ModelInstaller.modelDir(this).getAbsolutePath());
+            Recognizer r = new Recognizer(m, 16000f);
+            main.post(() -> {
+                if (!loading) { r.close(); m.close(); return; }
+                model = m;
+                recognizer = r;
+                try {
+                    speech = new SpeechService(recognizer, 16000f);
+                    acquireWakeLock();
+                    speech.startListening(this);
+                    update("Dinliyor · Hey Jarvis de");
+                } catch (Exception error) {
+                    update("Mikrofon açılamadı: " + error.getMessage());
+                    stopSelf();
+                }
+            });
+        } catch (Exception error) {
+            main.post(() -> {
+                update("Model açılamadı: " + error.getMessage());
+                stopSelf();
+            });
+        }
+    }
+
+    private void acquireWakeLock() {
+        PowerManager power = getSystemService(PowerManager.class);
+        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "elxvro:jarvisListening");
+        wakeLock.setReferenceCounted(false);
+        wakeLock.acquire();
+    }
+
+    @Override public void onPartialResult(String hypothesis) { accept(hypothesis); }
+    @Override public void onResult(String hypothesis) { accept(hypothesis); }
+    @Override public void onFinalResult(String hypothesis) { accept(hypothesis); }
+    @Override public void onError(Exception error) {
+        update("Ses tanıma hatası: " + error.getMessage());
+        stopSelf();
+    }
+    @Override public void onTimeout() { awaitingCommand = false; update("Dinliyor · Hey Jarvis de"); }
+
+    private void accept(String rawJson) {
+        try {
+            JSONObject data = new JSONObject(rawJson);
+            String text = data.optString("partial", data.optString("text", "")).trim();
+            if (text.isEmpty()) return;
+            if (awaitingCommand) {
+                String command = CommandRouter.stripWake(text);
+                if (command.isEmpty() || command.equals("hey")) return;
+                CommandRouter.Kind kind = CommandRouter.classify(command);
+                // In a partial hypothesis, wait for a recognized command word.
+                if (kind != CommandRouter.Kind.UNKNOWN) dispatch(kind);
+                return;
+            }
+            if (SystemClock.elapsedRealtime() < suppressUntil) return;
+            if (CommandRouter.containsWake(text)) {
+                awaitingCommand = true;
+                update("Uyandım. Komutunu söyle.");
+                scheduleTimeout();
+                String trailing = CommandRouter.stripWake(text);
+                CommandRouter.Kind kind = CommandRouter.classify(trailing);
+                if (kind != CommandRouter.Kind.UNKNOWN) dispatch(kind);
+            }
+        } catch (Exception ignored) {
+            // Ignore an incomplete speech hypothesis, not the microphone service.
+        }
+    }
+
+    private void scheduleTimeout() {
+        if (commandTimeout != null) main.removeCallbacks(commandTimeout);
+        commandTimeout = () -> {
+            if (awaitingCommand) {
+                awaitingCommand = false;
+                update("Komut süresi doldu · Hey Jarvis de");
+                if (speech != null) speech.reset();
+            }
+        };
+        main.postDelayed(commandTimeout, 9000L);
+    }
+
+    private void dispatch(CommandRouter.Kind command) {
+        awaitingCommand = false;
+        suppressUntil = SystemClock.elapsedRealtime() + 4000L;
+        if (commandTimeout != null) main.removeCallbacks(commandTimeout);
+        if (speech != null) speech.reset();
+        if (command == CommandRouter.Kind.STOP) {
+            stopSelf();
+            return;
+        }
+        String message;
+        PendingIntent action = null;
+        switch (command) {
+            case HELP:
+                message = "Komutlar: Instagram, Play Console, web sitesi, arama, dur.";
+                break;
+            case INSTAGRAM:
+                message = "Instagram'ı açmak için bildirime dokun.";
+                action = webAction("https://www.instagram.com/");
+                break;
+            case PLAY_CONSOLE:
+                message = "Play Console'u açmak için bildirime dokun.";
+                action = webAction("https://play.google.com/console/");
+                break;
+            case WEBSITE:
+                message = "Web siteni açmak için bildirime dokun.";
+                action = webAction("https://filtre.elxvro.com/");
+                break;
+            case PHONE:
+                message = "Arama ekranı için bildirime dokun.";
+                Intent dial = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:"));
+                dial.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                action = PendingIntent.getActivity(this, 25, dial,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                break;
+            default:
+                message = "Komut anlaşılamadı.";
+        }
+        update(message, action);
+    }
+
+    private PendingIntent webAction(String destination) {
+        Intent open = new Intent(Intent.ACTION_VIEW, Uri.parse(destination));
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // Different data URIs keep these PendingIntents separate.
+        return PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private void update(String status) { update(status, null); }
+    private void update(String status, PendingIntent action) {
+        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, statusNotification(status, action));
+    }
+
+    private Notification statusNotification(String status, PendingIntent action) {
+        Intent stop = new Intent(this, JarvisService.class);
+        stop.setAction(ACTION_STOP);
+        PendingIntent stopAction = PendingIntent.getService(this, 20, stop,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder n = new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("ELXVRO JARVIS")
+                .setContentText(status)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .addAction(android.R.drawable.ic_media_pause, "Durdur", stopAction);
+        if (action != null) {
+            n.setContentIntent(action).setAutoCancel(false)
+                    .addAction(android.R.drawable.ic_menu_view, "Aç", action);
+        } else {
+            Intent main = new Intent(this, MainActivity.class);
+            n.setContentIntent(PendingIntent.getActivity(this, 21, main,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        }
+        return n.build();
+    }
+
+    @Override public void onDestroy() {
+        loading = false;
+        if (commandTimeout != null) main.removeCallbacks(commandTimeout);
+        if (speech != null) {
+            speech.shutdown();
+            speech = null;
+        }
+        if (recognizer != null) { recognizer.close(); recognizer = null; }
+        if (model != null) { model.close(); model = null; }
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent intent) { return null; }
+}
