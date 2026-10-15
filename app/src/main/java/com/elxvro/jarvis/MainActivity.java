@@ -144,6 +144,13 @@ public final class MainActivity extends Activity {
             @Override public void onDone() { aiStatus.setText("Yanıt telefonda üretildi."); }
             @Override public void onError(String message) { aiStatus.setText(message); }
         });
+        // Keep the selected local GGUF model across app restarts. A second
+        // multi-gigabyte file-picker copy is not needed after the first import.
+        File savedModel = new File(new File(getFilesDir(), "local-ai"), "mia-model.gguf");
+        if (savedModel.isFile() && savedModel.length() >= 16L * 1024L * 1024L) {
+            aiStatus.setText("Kaydedilmiş yapay zekâ modeli açılıyor...");
+            localAi.loadModel(savedModel.getAbsolutePath());
+        }
         // Install the bundled model once on first launch, off the UI thread.
         if (!ModelInstaller.installed(this)) {
             installModel();
