@@ -1,4 +1,16 @@
-# ELXVRO MIA v0.3.0 — gerçek yerel AI
+# ELXVRO MIA v0.3.1 — Yerel AI + onaylı telefon araçları
+
+## v0.3.1 — Yapay zekâ sohbet ekranından gerçek işlemler
+- **Araç köprüsü:** Sohbet girişinden doğrudan komut verilebilir: `Instagram aç`, `Play Console'u aç`, `siteyi aç`, `YouTube aç`, `ayarlar`, `05321234567`, `Google'da Android haberleri ara`, `not al: ...`, `notlarımı göster`.
+- Komutlar yalnızca kullanıcının yazdığı veya yerel olarak tanınan sesli sözlerinden çözümlenir. Model çıktıları asla otomatik çalıştırılmaz. **Tüm dış açılışlar ve yeni notlar kullanıcı onayı ister.**
+- **Gerçek yerel notlar:** Sadece Android özel uygulama depolamasına kaydedilir; sunucu hesabı gerekmez.
+- **Çevrimdışı mikrofonla yaz:** Yerleşik Vosk modeli, kaydı kullanıcı tamamlayana kadar çalışır; sonrasında komut onay ekranına alınır.
+- **Yanıt seslendirme:** Android'deki Türkçe konuşma motorunu kullanır; gerekli yerel Türkçe ses kurulu değilse yazılı cevap çalışmaya devam eder.
+- **Mevcut sınırlama:** Sosyal medya paylaşımı, Play Console yayınlama ve hosting dosya değişiklikleri henüz entegre değil. Bu işlemler için yetkili API erişimi gerekir.
+- İmzaya dikkat: Her CI debug derlemesi farklı anahtarla imzalanabilir. Eski sürümü kaldırmak gerekirse özel depolamadaki GGUF kopyası silinir; orijinal `.gguf` dosyanı İndirilenler'de tut.
+
+## Önceki v0.3.0
+
 
 Android 16 odaklı kişisel, çevrimdışı Türkçe sesli uyandırma prototipi.
 

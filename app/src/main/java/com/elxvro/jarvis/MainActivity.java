@@ -22,6 +22,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.provider.OpenableColumns;
+import android.content.SharedPreferences;
+import android.speech.tts.TextToSpeech;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import android.database.Cursor;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -34,6 +40,8 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQ_MIC = 502;
     private static final int REQ_GGUF = 609;
+    private static final int REQ_DICTATION = 610;
+    private static final String NOTES_PREF = "mia_personal_notes";
     private static final int WHITE = 0xffedf2fa;
     private static final int MUTED = 0xffa6b7d0;
     private static final int ACCENT = 0xff5ce3c0;
@@ -47,6 +55,13 @@ public final class MainActivity extends Activity {
     private Button aiSend;
     private LocalAiBridge localAi;
     private final StringBuilder generated = new StringBuilder();
+    private MiaActionParser.Plan pendingTool;
+    private TextView toolPreview;
+    private Button confirmTool, cancelTool;
+    private boolean speakReplies = false;
+    private Button stopDictationButton;
+    private MiaDictation dictation;
+    private Button speakToggle;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -62,7 +77,7 @@ public final class MainActivity extends Activity {
         brand.setTypeface(null, Typeface.BOLD);
         TextView heading = text(root, "MIA", 46, WHITE);
         heading.setTypeface(null, Typeface.BOLD);
-        text(root, "v0.3.0 · Yerel yapay zekâ · Ücretsiz · İnternetsiz sohbet", 14, MUTED);
+        text(root, "v0.3.1 · Yerel AI + Gerçek telefon komutları", 14, MUTED);
         gap(root, 18);
         TextView intro = text(root, "Sadece “Mia” demen yeterli.", 23, WHITE);
         intro.setTypeface(null, Typeface.BOLD);
@@ -74,7 +89,7 @@ public final class MainActivity extends Activity {
         gap(root, 15);
 
         section(root, "MIA — Cihazda çalışan yapay zekâ");
-        text(root, "1. GGUF modelini telefona indir. 2. Modeli seç. 3. Türkçe sorunu yaz. Soru ve yanıtlar sunucuya gönderilmez.", 15, MUTED);
+        text(root, "Sohbet et veya komut ver: 'Instagram aç', 'siteyi aç', 'not al: süt al', 'notlarımı göster', '0532...' . Komutların çalıştırılması için onay istenir.", 15, MUTED);
         aiStatus = text(root, "Yapay zekâ modeli seçilmedi.", 15, ACCENT);
         button(root, "Yerel GGUF modelini seç", 0xff264a55, v -> chooseModel());
         button(root, "Önerilen ücretsiz modeli bul (1.5B)", 0xff243751, v ->
@@ -90,9 +105,24 @@ public final class MainActivity extends Activity {
         aiInput.setPadding(dp(16), dp(12), dp(16), dp(12));
         aiInput.setBackground(background(0xff1b2b43, 16));
         root.addView(aiInput, new LinearLayout.LayoutParams(-1, -2));
-        aiSend = button(root, "MIA'ya sor (yalnızca telefonda)", 0xff236d60, v -> askLocal());
+        aiSend = button(root, "MIA'ya sor / komut ver", 0xff236d60, v -> askLocal());
         aiOutput = text(root, "Yanıt burada görünecek.", 17, WHITE);
         aiOutput.setTextIsSelectable(true);
+        toolPreview = text(root, "", 17, ACCENT);
+        confirmTool = button(root, "Onayla ve çalıştır", 0xff236d60, v -> approveTool());
+        cancelTool = button(root, "Vazgeç", 0xff533646, v -> hideTool());
+        confirmTool.setVisibility(View.GONE);
+        cancelTool.setVisibility(View.GONE);
+        speakToggle = button(root, "Sesli yanıt: Kapalı (açmak için dokun)", 0xff243751, v -> {
+            speakReplies = !speakReplies;
+            speakToggle.setText(speakReplies ? "Sesli yanıt: Açık (kapatmak için dokun)" :
+                    "Sesli yanıt: Kapalı (açmak için dokun)");
+            voiceStatus.setText(speakReplies ? "Yanıtlar Türkçe TTS ile okunacak (cihazda çevrimdışı ses varsa)." : "Sesli yanıt kapalı.");
+        });
+        button(root, "Son cevabı seslendir", 0xff264a55, v -> speakLast());
+        button(root, "Mikrofonla yaz (cihazda Vosk)", 0xff243751, v -> beginDictation());
+        stopDictationButton = button(root, "Dinlemeyi bitir", 0xff533646, v -> endDictation());
+        stopDictationButton.setVisibility(View.GONE);
         gap(root, 22);
         section(root, "Yazılı komut");
         typed = new EditText(this);
@@ -141,7 +171,10 @@ public final class MainActivity extends Activity {
                 else generated.append(token);
                 aiOutput.setText(generated.toString());
             }
-            @Override public void onDone() { aiStatus.setText("Yanıt telefonda üretildi."); }
+            @Override public void onDone() {
+                aiStatus.setText("Yanıt telefonda üretildi.");
+                if (speakReplies) speakLast();
+            }
             @Override public void onError(String message) { aiStatus.setText(message); }
         });
         // Keep the selected local GGUF model across app restarts. A second
@@ -236,13 +269,175 @@ public final class MainActivity extends Activity {
     }
 
     private void askLocal() {
-        if (localAi == null) return;
         String question = aiInput.getText().toString().trim();
-        if (question.isEmpty()) { aiStatus.setText("Önce soru yaz."); return; }
-        aiStatus.setText("MIA çevrimdışı düşünüyor...");
-        localAi.ask(question);
+        if (question.isEmpty()) { aiStatus.setText("Önce soru veya komut yaz."); return; }
+        hideTool();
+        MiaActionParser.Plan plan = MiaActionParser.parse(question);
+        if (plan != null) {
+            if (plan.type == MiaActionParser.Type.LIST_NOTES) {
+                showNotes();
+            } else {
+                pendingTool = plan;
+                toolPreview.setText("MIA'nın yapacağı işlem: " + plan.summary +
+                    "\nBu işlemi yalnızca onay verirsen çalıştıracağım.");
+                confirmTool.setVisibility(View.VISIBLE);
+                cancelTool.setVisibility(View.VISIBLE);
+                aiStatus.setText("Komut tanındı. Onayını bekliyorum.");
+            }
+        } else if (localAi != null) {
+            aiStatus.setText("MIA çevrimdışı düşünüyor...");
+            localAi.ask(question);
+        }
         ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
                 .hideSoftInputFromWindow(aiInput.getWindowToken(), 0);
+    }
+
+    private void hideTool() {
+        pendingTool = null;
+        if (toolPreview != null) toolPreview.setText("");
+        if (confirmTool != null) confirmTool.setVisibility(View.GONE);
+        if (cancelTool != null) cancelTool.setVisibility(View.GONE);
+    }
+
+    private void approveTool() {
+        MiaActionParser.Plan plan = pendingTool;
+        hideTool();
+        if (plan == null) return;
+        try {
+            switch (plan.type) {
+                case INSTAGRAM:
+                    openAppOrWeb("com.instagram.android", "https://www.instagram.com/");
+                    replyTool("Instagram açılıyor.");
+                    break;
+                case PLAY_CONSOLE:
+                    open("https://play.google.com/console/");
+                    replyTool("Google Play Console açılıyor.");
+                    break;
+                case WEBSITE:
+                    open("https://filtre.elxvro.com/");
+                    replyTool("ELXVRO web sitesi açılıyor.");
+                    break;
+                case YOUTUBE:
+                    openAppOrWeb("com.google.android.youtube", "https://www.youtube.com/");
+                    replyTool("YouTube açılıyor.");
+                    break;
+                case SETTINGS:
+                    startActivity(new Intent(Settings.ACTION_SETTINGS));
+                    replyTool("Telefon ayarları açılıyor.");
+                    break;
+                case DIAL:
+                    startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + plan.payload)));
+                    replyTool("Arama ekranı açıldı. Telefon görüşmesi başlatılmadı.");
+                    break;
+                case GOOGLE_SEARCH:
+                    open("https://www.google.com/search?q=" +
+                         URLEncoder.encode(plan.payload, StandardCharsets.UTF_8));
+                    replyTool("Web araması açılıyor.");
+                    break;
+                case SAVE_NOTE:
+                    addNote(plan.payload);
+                    replyTool("Not telefonuna kaydedildi: " + plan.payload);
+                    break;
+                default:
+                    aiStatus.setText("Bu araç desteklenmiyor.");
+            }
+        } catch (ActivityNotFoundException error) {
+            aiStatus.setText("İşlemi açabilecek uygulama yok.");
+        } catch (SecurityException error) {
+            aiStatus.setText("Android bu işlem için izin vermedi.");
+        } catch (Exception error) {
+            aiStatus.setText("İşlem gerçekleşmedi: " + error.getMessage());
+        }
+    }
+
+    private void replyTool(String message) {
+        generated.setLength(0);
+        generated.append(message);
+        aiOutput.setText(message);
+        aiStatus.setText("Komut çalıştırıldı.");
+        if (speakReplies) speakLast();
+    }
+
+    private void openAppOrWeb(String pkg, String url) {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
+        if (launch != null) startActivity(launch);
+        else open(url);
+    }
+
+    private void addNote(String note) throws Exception {
+        if (note.length() > 1200) throw new IllegalArgumentException("Not en fazla 1200 karakter olabilir.");
+        SharedPreferences prefs = getSharedPreferences(NOTES_PREF, MODE_PRIVATE);
+        JSONArray entries = new JSONArray(prefs.getString("items", "[]"));
+        JSONArray capped = new JSONArray();
+        capped.put(new JSONObject().put("text", note).put("time", System.currentTimeMillis()));
+        for (int i = 0; i < entries.length() && i < 49; i++) capped.put(entries.getJSONObject(i));
+        if (!prefs.edit().putString("items", capped.toString()).commit()) {
+            throw new Exception("Telefon depolamasına yazılamadı");
+        }
+    }
+
+    private void showNotes() {
+        try {
+            JSONArray entries = new JSONArray(getSharedPreferences(NOTES_PREF, MODE_PRIVATE)
+                    .getString("items", "[]"));
+            StringBuilder out = new StringBuilder();
+            if (entries.length() == 0) out.append("Henüz kayıtlı not yok.");
+            else {
+                out.append("Telefondaki notların:\n");
+                for (int i = 0; i < entries.length(); i++) {
+                    out.append("\n").append(i + 1).append(". ")
+                            .append(entries.getJSONObject(i).optString("text"));
+                }
+            }
+            generated.setLength(0);
+            generated.append(out);
+            aiOutput.setText(out.toString());
+            aiStatus.setText("Notlar sadece cihazda tutuluyor.");
+        } catch (Exception error) {
+            aiStatus.setText("Notlar okunamadı: " + error.getMessage());
+        }
+    }
+
+    private void speakLast() {
+        if (voice == null) return;
+        String phrase = aiOutput.getText().toString().trim();
+        if (phrase.isEmpty() || phrase.equals("Yanıt burada görünecek.")) {
+            voiceStatus.setText("Önce Mia'dan bir cevap al.");
+            return;
+        }
+        if (phrase.length() > 600) phrase = phrase.substring(0, 600);
+        voiceStatus.setText("Türkçe sesli yanıt deneniyor...");
+        voice.say(phrase, () -> {});
+    }
+
+    private void beginDictation() {
+        if (!ModelInstaller.installed(this)) {
+            voiceStatus.setText("Mikrofon için önce Türkçe tanıma modeli kurulmalı.");
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_DICTATION);
+            return;
+        }
+        // There may be only one microphone capture owner at a time.
+        stopService(new Intent(this, JarvisService.class));
+        if (dictation != null) dictation.close();
+        dictation = new MiaDictation(this, new MiaDictation.Listener() {
+            @Override public void status(String message) { voiceStatus.setText(message); }
+            @Override public void text(String words) { aiInput.setText(words); aiInput.setSelection(words.length()); }
+            @Override public void stopped() { stopDictationButton.setVisibility(View.GONE); }
+        });
+        stopDictationButton.setVisibility(View.VISIBLE);
+        dictation.start();
+    }
+
+    private void endDictation() {
+        if (dictation != null) {
+            dictation.close();
+            dictation = null;
+        }
+        stopDictationButton.setVisibility(View.GONE);
+        voiceStatus.setText("Yazılan komutu kontrol edip 'MIA'ya sor / komut ver' düğmesine bas.");
     }
 
     private void runTyped() {
@@ -348,6 +543,11 @@ public final class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(requestCode, permissions, grants);
+        if (requestCode == REQ_DICTATION) {
+            if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) beginDictation();
+            else voiceStatus.setText("Mikrofon izni verilmedi.");
+            return;
+        }
         if (requestCode == REQ_MIC) {
             if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) requestStart();
             else status.setText("Mikrofon izni yok. Yazılı komutları kullanabilirsin.");
@@ -396,6 +596,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         workers.shutdown();
         if (voice != null) voice.shutdown();
+        if (dictation != null) dictation.close();
         if (localAi != null) localAi.close();
         super.onDestroy();
     }
